@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MRP 实施项目 · 进度与 Issue 跟踪</title>
+<style>
+  :root {
+    --bg:#0f1b2d; --panel:#172a45; --panel-2:#1d3355; --border:#2c4a75;
+    --text:#e8eef7; --muted:#93a5c0; --accent:#6fd3c2;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif; min-height:100vh; }
+  /* ===== 登录页 ===== */
+  #loginView { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  .login-box { background:var(--panel); border-radius:14px; padding:34px; width:380px; }
+  .login-box h1 { font-size:20px; margin-bottom:6px; }
+  .login-box .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .login-box input { width:100%; margin-bottom:12px; }
+  input, select, textarea { background:var(--panel-2); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:10px 12px; font-size:14px; }
+  input:focus { outline:none; border-color:var(--accent); }
+  button { background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:9px 16px; font-size:14px; cursor:pointer; }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#0f1b2d; border-color:var(--accent); font-weight:600; width:100%; }
+  button.primary:hover { opacity:.9; color:#0f1b2d; }
+  .msg { font-size:13px; margin-top:10px; min-height:18px; }
+  .msg.err { color:#e74c3c; } .msg.ok { color:#2ecc71; }
+
+  /* ===== 主界面 ===== */
+  #appView { display:none; padding:20px 20px 60px; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .tabs { display:flex; gap:8px; }
+  .tab { padding:9px 20px; border-radius:8px; border:1px solid var(--border); background:var(--panel); cursor:pointer; font-size:14px; }
+  .tab.active { background:var(--accent); color:#0f1b2d; font-weight:600; border-color:var(--accent); }
+  .userbox { display:flex; gap:10px; align-items:center; color:var(--muted); font-size:13px; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  .toolbar .hint { color:var(--muted); font-size:12px; }
+
+  .table-wrap {
+    overflow:auto; max-height:calc(100vh - 210px);
+    background:var(--panel); border-radius:12px; border:1px solid var(--border);
+  }
+  table { border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; }
+  th, td { border-bottom:1px solid #22395e; padding:9px 12px; font-size:13.5px; white-space:pre-wrap; word-break:break-word; vertical-align:top; }
+  th { position:sticky; top:0; z-index:5; background:var(--panel-2); color:var(--muted); font-size:12px; text-align:left; min-width:110px; }
+  tr:last-child td { border-bottom:none; }
+  tbody tr:hover td { background:#1b3050; }
+  td[contenteditable]:focus { outline:2px solid var(--accent); border-radius:4px; background:#0f1b2d; min-width:110px; }
+  td.editable { cursor:text; }
+  .saved-flash { animation:flash 1s; }
+  @keyframes flash { 0%{background:#2ecc7133} 100%{background:transparent} }
+
+  #hscroll { position:fixed; left:0; right:0; bottom:0; height:14px; background:var(--panel); border-top:1px solid var(--border); overflow-x:auto; overflow-y:hidden; z-index:20; display:none; }
+  #hscroll .inner { height:1px; }
+
+  .archives { margin-top:22px; }
+  .archives h2 { font-size:16px; margin-bottom:8px; }
+  .archives ul { list-style:none; display:flex; flex-wrap:wrap; gap:8px; }
+  .archives li { display:flex; gap:6px; align-items:center; }
+  .archives li a { display:inline-block; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:7px 12px; font-size:13px; color:var(--accent); text-decoration:none; cursor:pointer; }
+  .empty { color:var(--muted); font-size:13px; padding:14px; }
+  #toast { position:fixed; top:18px; right:18px; background:var(--panel-2); border:1px solid var(--accent); color:var(--text); border-radius:10px; padding:12px 18px; font-size:13px; display:none; z-index:99; max-width:420px; }
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <div class="login-box">
+    <h1>MRP 实施项目看板</h1>
+    <div class="sub">项目进度 & Issue List · 仅限项目成员（凭访问令牌登录）</div>
+    <input id="token" type="password" placeholder="访问令牌（Access Token）" autocomplete="current-password" />
+    <button class="primary" id="loginBtn">登 录</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+</div>
+
+<div id="appView">
+  <div class="topbar">
+    <div class="tabs">
+      <div class="tab active" data-table="progress">项目进度表</div>
+      <div class="tab" data-table="issues">Issue List</div>
+      <div class="tab" data-table="archive">历史存档</div>
+    </div>
+    <div class="userbox"><span id="whoami"></span><button id="logoutBtn">退出</button></div>
+  </div>
+
+  <div id="tableArea">
+    <div class="toolbar">
+      <button id="addRowBtn">＋ 新增一行</button>
+      <button id="delRowBtn">－ 删除选中行</button>
+      <button id="refreshBtn">↻ 刷新</button>
+      <span class="hint">单击单元格编辑，离开自动保存 · 每周日 0 点系统自动滚动周计划并存档 Excel</span>
+    </div>
+    <div class="table-wrap" id="tableWrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+  </div>
+
+  <div id="archiveArea" class="archives" style="display:none">
+    <h2>每周自动存档（Excel，更新前快照）</h2>
+    <ul id="archiveList"></ul>
+  </div>
+</div>
+
+<div id="hscroll"><div class="inner" id="hscrollInner"></div></div>
+<div id="toast"></div>
+
+<script>
+// ================= 配置 =================
+const GH_OWNER = 'HMXGQ';                  // GitHub 用户名
+const GH_REPO  = 'Hnet-MRP-Data';         // 私有数据仓库名
+const API = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`;
+const FILES = { progress: 'data/progress.json', issues: 'data/issues.json' };
+
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+let token = localStorage.getItem('mrp-token') || '';
+let current = 'progress';
+let state = { progress: null, issues: null };   // {columns, rows, sha}
+let selected = new Set();
+let nextId = 1;
+
+// ================= GitHub API =================
+async function gh(path, opts = {}) {
+  const res = await fetch(`${API}/contents/${path}`, {
+    ...opts,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(opts.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    const err = new Error(detail.message || `HTTP ${res.status}`);
+    err.status = res.status; err.detail = detail;
+    throw err;
+  }
+  return res.json();
+}
+const b64decode = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,'')), c => c.charCodeAt(0)));
+const b64encode = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+
+async function loadFile(key) {
+  const j = await gh(FILES[key]);
+  const content = JSON.parse(b64decode(j.content));
+  state[key] = { columns: content.columns || [], rows: content.rows || [], sha: j.sha };
+  const ids = state[key].rows.map(r => r.id || 0);
+  nextId = Math.max(nextId, ...ids, 0) + 1;
+}
+async function saveFile(key) {
+  const s = state[key];
+  const body = JSON.stringify({ message: `update ${FILES[key]} at ${new Date().toISOString()}`, content: b64encode(JSON.stringify({columns:s.columns, rows:s.rows}, null, 2)), sha: s.sha });
+  const j = await gh(FILES[key], { method:'PUT', headers:{'Content-Type':'application/json'}, body });
+  s.sha = j.content.sha;
+}
+function toast(text) {
+  const t = $('toast'); t.textContent = text; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3000);
+}
+
+// ================= 登录 =================
+$('loginBtn').onclick = async () => {
+  const msg = $('loginMsg'); msg.textContent = '验证令牌中…'; msg.className = 'msg';
+  const t = $('token').value.trim();
+  if (!t) { msg.textContent = '请输入访问令牌'; msg.className = 'msg err'; return; }
+  token = t;
+  try {
+    await gh('data/progress.json');
+    localStorage.setItem('mrp-token', t);
+    msg.textContent = '验证通过，进入系统…'; msg.className = 'msg ok';
+    showApp();
+  } catch (e) {
+    token = '';
+    msg.textContent = '令牌无效或无权访问：' + (e.status === 401 ? '令牌错误/已过期' : e.status === 404 ? '令牌无权访问数据仓库' : e.message);
+    msg.className = 'msg err';
+  }
+};
+$('logoutBtn').onclick = () => { localStorage.removeItem('mrp-token'); location.reload(); };
+
+async function showApp() {
+  $('loginView').style.display = 'none'; $('appView').style.display = 'block';
+  try { const u = await (await fetch('https://api.github.com/user', { headers:{ Authorization:`Bearer ${token}` }})).json(); $('whoami').textContent = u.login || ''; } catch {}
+  await loadFile('progress'); await loadFile('issues');
+  switchTab('progress');
+}
+
+// ================= 表格 =================
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.table));
+function switchTab(name) {
+  current = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.table === name));
+  const isArchive = name === 'archive';
+  $('tableArea').style.display = isArchive ? 'none' : 'block';
+  $('archiveArea').style.display = isArchive ? 'block' : 'none';
+  isArchive ? loadArchives() : renderTable();
+}
+
+function renderTable() {
+  const s = state[current]; if (!s) return;
+  $('thead').innerHTML = '<th style="min-width:36px"></th><th style="min-width:40px">#</th>' + s.columns.map(c => `<th>${esc(c)}</th>`).join('');
+  $('tbody').innerHTML = s.rows.length ? s.rows.map((r, i) =>
+    `<tr data-id="${r.id}">
+      <td><input type="checkbox" class="rowchk" data-id="${r.id}"></td>
+      <td style="color:var(--muted)">${i+1}</td>
+      ${s.columns.map(c => `<td class="editable" contenteditable="true" data-col="${esc(c)}">${esc(r.data?.[c] ?? '')}</td>`).join('')}
+    </tr>`).join('')
+    : `<tr><td colspan="${s.columns.length+2}" class="empty">暂无数据。点击「＋ 新增一行」添加。</td></tr>`;
+
+  document.querySelectorAll('.rowchk').forEach(c => c.onchange = syncSel);
+  document.querySelectorAll('td.editable').forEach(td => {
+    td.addEventListener('blur', () => saveCell(td));
+    td.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); td.blur(); } });
+  });
+  syncHScroll();
+}
+function syncSel(){ selected = new Set([...document.querySelectorAll('.rowchk:checked')].map(c => +c.dataset.id)); }
+
+async function saveCell(td) {
+  const id = +td.closest('tr').dataset.id, col = td.dataset.col, val = td.innerText.replace(/\u00a0/g,' ').trim();
+  const row = state[current].rows.find(r => r.id === id);
+  if (!row || (row.data?.[col] ?? '') === val) return;
+  row.data = { ...(row.data || {}), [col]: val };
+  try {
+    await loadFile(current);                    // 取最新版本，降低覆盖他人修改的概率
+    const fresh = state[current].rows.find(r => r.id === id);
+    if (fresh) { fresh.data = { ...(fresh.data || {}), [col]: val }; state[current].rows = state[current].rows.map(r => r.id === id ? fresh : r); }
+    else state[current].rows.push(row);
+    await saveFile(current);
+    td.classList.remove('saved-flash'); void td.offsetWidth; td.classList.add('saved-flash');
+  } catch (e) {
+    if (e.status === 409 || /conflict/i.test(e.message)) { toast('保存冲突：其他人刚保存了修改，3 秒后自动刷新，请稍后重试此格'); setTimeout(async () => { await loadFile(current); renderTable(); }, 3000); }
+    else toast('保存失败：' + e.message);
+  }
+}
+
+$('addRowBtn').onclick = async () => {
+  try {
+    await loadFile(current);
+    state[current].rows.push({ id: nextId, data: {} });
+    await saveFile(current);
+    renderTable();
+  } catch (e) { toast('新增失败：' + e.message); }
+};
+$('delRowBtn').onclick = async () => {
+  if (!selected.size) return alert('请先勾选要删除的行');
+  if (!confirm(`确定删除 ${selected.size} 行？`)) return;
+  try {
+    await loadFile(current);
+    state[current].rows = state[current].rows.filter(r => !selected.has(r.id));
+    await saveFile(current);
+    selected.clear(); renderTable();
+  } catch (e) { toast('删除失败：' + e.message); }
+};
+$('refreshBtn').onclick = async () => { await loadFile(current); renderTable(); toast('已刷新'); };
+
+// ================= 历史存档 =================
+async function loadArchives() {
+  $('archiveList').innerHTML = '<li class="empty">加载中…</li>';
+  try {
+    const years = await gh('archives');   // 目录列表
+    const folders = years.filter(x => x.type === 'dir');
+    if (!folders.length) { $('archiveList').innerHTML = '<li class="empty">暂无存档（每周日 0 点自动生成）</li>'; return; }
+    folders.reverse();
+    const items = [];
+    for (const f of folders) {
+      const files = await gh(`archives/${f.name}`);
+      files.filter(x => x.name.endsWith('.xlsx')).forEach(x => items.push(x));
+    }
+    $('archiveList').innerHTML = items.length
+      ? items.map(x => `<li><a data-path="${esc(x.path)}">📄 ${esc(x.name)}</a></li>`).join('')
+      : '<li class="empty">暂无存档（每周日 0 点自动生成）</li>';
+    document.querySelectorAll('#archiveList a').forEach(a => a.onclick = () => downloadXlsx(a.dataset.path, a.textContent.trim().replace('📄 ','')));
+  } catch (e) {
+    $('archiveList').innerHTML = `<li class="empty">读取存档失败：${esc(e.message)}</li>`;
+  }
+}
+async function downloadXlsx(path, name) {
+  try {
+    const j = await gh(path);
+    const bin = Uint8Array.from(atob(j.content.replace(/\n/g,'')), c => c.charCodeAt(0));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bin], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = name; a.click();
+  } catch (e) { toast('下载失败：' + e.message); }
+}
+
+// ================= 底部横拉条 =================
+const wrap = $('tableWrap'), hs = $('hscroll'), inner = $('hscrollInner');
+function syncHScroll(){
+  const need = wrap.scrollWidth > wrap.clientWidth + 2;
+  hs.style.display = need ? 'block' : 'none';
+  inner.style.width = wrap.scrollWidth + 'px';
+}
+hs.onscroll = () => wrap.scrollLeft = hs.scrollLeft;
+wrap.onscroll = () => hs.scrollLeft = wrap.scrollLeft;
+window.addEventListener('resize', syncHScroll);
+
+if (token) { $('loginView').style.display='none'; showApp(); }
+</script>
+</body>
+</html>
