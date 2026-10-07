@@ -89,6 +89,7 @@
       <button id="addRowBtn">＋ 新增一行</button>
       <button id="delRowBtn">－ 删除选中行</button>
       <button id="refreshBtn">↻ 刷新</button>
+      <button id="downloadBtn">📥 下载 Excel</button>
       <span class="hint">单击单元格编辑，离开自动保存 · 每周日 0 点系统自动滚动周计划并存档 Excel</span>
     </div>
     <div class="table-wrap" id="tableWrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
@@ -253,6 +254,73 @@ $('delRowBtn').onclick = async () => {
   } catch (e) { toast('删除失败：' + e.message); }
 };
 $('refreshBtn').onclick = async () => { await loadFile(current); renderTable(); toast('已刷新'); };
+
+// ================= 下载 Excel（exceljs：列宽自适应 + 自动换行 + 表头样式 + 冻结首行） =================
+$('downloadBtn').onclick = async () => {
+  try {
+    toast('生成 Excel 中…');
+    await loadFile(current);   // 下载前拉取云端最新数据
+    const s = state[current];
+    const ExcelJS = (await import('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/+esm')).default ?? await import('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/+esm');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(current === 'progress' ? '项目进度表' : 'IssueList', {
+      views: [{ state: 'frozen', ySplit: 1 }]
+    });
+
+    // 表头
+    const header = ws.addRow(s.columns);
+    header.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172A45' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FF93A5C0' } } };
+    });
+
+    // 数据行
+    s.rows.forEach(r => {
+      const row = ws.addRow(s.columns.map(c => (r.data?.[c] ?? '').toString()));
+      row.eachCell(cell => {
+        cell.alignment = { vertical: 'top', wrapText: true };   // 自动换行
+      });
+    });
+
+    // 列宽：按每列最长内容估算（中文按 2 计），限制在合理范围
+    ws.columns.forEach((col, ci) => {
+      let w = [...s.columns[ci]].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+      s.rows.forEach(r => {
+        const v = String(r.data?.[s.columns[ci]] ?? '');
+        v.split('\n').forEach(L => {
+          w = Math.max(w, [...L].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0));
+        });
+      });
+      col.width = Math.min(Math.max(w + 2, 10), 45);
+    });
+
+    // 行高：按每行换行最多的列估算
+    s.rows.forEach((r, ri) => {
+      let maxLines = 1;
+      s.columns.forEach(c => {
+        const v = String(r.data?.[c] ?? '');
+        let lines = 0;
+        v.split('\n').forEach(L => {
+          const colW = ws.columns[s.columns.indexOf(c)]?.width || 12;
+          lines += Math.max(1, Math.ceil(([...L].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0)) / Math.max(colW - 2, 6)));
+        });
+        maxLines = Math.max(maxLines, lines);
+      });
+      if (maxLines > 1) ws.getRow(ri + 2).height = Math.min(maxLines * 14 + 4, 200);
+    });
+
+    const name = (current === 'progress' ? '项目进度表' : 'IssueList') + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('已下载：' + name);
+  } catch (e) { toast('下载失败：' + e.message); }
+};
 
 // ================= 历史存档 =================
 async function loadArchives() {
